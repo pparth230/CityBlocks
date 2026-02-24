@@ -18,9 +18,12 @@ function makeTile(col, row) {
   return { id: `${col},${row}`, col, row, stage: CROP_STAGES.EMPTY, ticksLeft: 0 }
 }
 
+let machineIdCounter = 2
+
 const INITIAL_STATE = {
   tiles: [makeTile(0, 0)],
-  drone: { col: 0, row: 0, action: 'idle' },
+  machines: [{ id: '1', type: 'base_drone', col: 0, row: 0, action: 'idle', routineId: null }],
+  selectedTiles: [],
   bag: { wheat: 0 },
   running: false,
   tickCount: 0,
@@ -43,28 +46,29 @@ export const useGameStore = create((set, get) => ({
     }))
   },
 
-  buyTile(dir) {
-    const { bag, drone, tiles } = get()
+  buyTile(col, row, dir) {
+    const { bag, tiles } = get()
     if (bag.wheat < TILE_COST) return false
     const d = DIR_DELTA[dir]
     if (!d) return false
-    const col = drone.col + d.col
-    const row = drone.row + d.row
-    if (tiles.find(t => t.col === col && t.row === row)) return false // already exists
+    const nc = col + d.col
+    const nr = row + d.row
+    if (tiles.find(t => t.col === nc && t.row === nr)) return false
     set(s => ({
-      tiles: [...s.tiles, makeTile(col, row)],
+      tiles: [...s.tiles, makeTile(nc, nr)],
       bag: { ...s.bag, wheat: s.bag.wheat - TILE_COST },
     }))
     return true
   },
 
-  canBuyInDir(dir) {
-    const { bag, drone, tiles } = get()
+  canBuyInDir(col, row, dir) {
+    const { bag, tiles } = get()
     if (bag.wheat < TILE_COST) return false
     const d = DIR_DELTA[dir]
-    const col = drone.col + d.col
-    const row = drone.row + d.row
-    return !tiles.find(t => t.col === col && t.row === row)
+    if (!d) return false
+    const nc = col + d.col
+    const nr = row + d.row
+    return !tiles.find(t => t.col === nc && t.row === nr)
   },
 
   tickCrops() {
@@ -88,39 +92,75 @@ export const useGameStore = create((set, get) => ({
     }))
   },
 
-  // ── Drone ──
-  setDroneAction(action) {
-    set(s => ({ drone: { ...s.drone, action } }))
+  // ── Machines ──
+  addMachine(type, col, row) {
+    const id = String(machineIdCounter++)
+    set(s => ({
+      machines: [...s.machines, { id, type, col, row, action: 'idle', routineId: null }],
+    }))
+    return id
   },
 
-  moveDrone(dir) {
-    const { drone, tiles } = get()
+  removeMachine(id) {
+    set(s => ({ machines: s.machines.filter(m => m.id !== id) }))
+  },
+
+  setMachineAction(id, action) {
+    set(s => ({
+      machines: s.machines.map(m => m.id === id ? { ...m, action } : m),
+    }))
+  },
+
+  moveMachineDir(id, dir) {
+    const { machines, tiles } = get()
+    const machine = machines.find(m => m.id === id)
+    if (!machine) return false
     const d = DIR_DELTA[dir]
     if (!d) return false
-    const col = drone.col + d.col
-    const row = drone.row + d.row
+    const col = machine.col + d.col
+    const row = machine.row + d.row
     if (!tiles.find(t => t.col === col && t.row === row)) return false
-    set(s => ({ drone: { ...s.drone, col, row } }))
+    set(s => ({
+      machines: s.machines.map(m => m.id === id ? { ...m, col, row } : m),
+    }))
     return true
   },
 
-  moveDroneTo(col, row) {
-    const { tiles } = get()
-    if (!tiles.find(t => t.col === col && t.row === row)) return false
-    set(s => ({ drone: { ...s.drone, col, row } }))
-    return true
-  },
-
-  canMove(dir) {
-    const { drone, tiles } = get()
+  canMachineMove(id, dir) {
+    const { machines, tiles } = get()
+    const machine = machines.find(m => m.id === id)
+    if (!machine) return false
     const d = DIR_DELTA[dir]
     if (!d) return false
-    return !!tiles.find(t => t.col === drone.col + d.col && t.row === drone.row + d.row)
+    return !!tiles.find(t => t.col === machine.col + d.col && t.row === machine.row + d.row)
   },
 
-  getCurrentTile() {
-    const { drone } = get()
-    return get().getTileAt(drone.col, drone.row)
+  getMachineAt(col, row) {
+    return get().machines.find(m => m.col === col && m.row === row) ?? null
+  },
+
+  setMachineRoutine(id, routineId) {
+    set(s => ({
+      machines: s.machines.map(m => m.id === id ? { ...m, routineId } : m),
+    }))
+  },
+
+  // ── Tile selection ──
+  selectTile(col, row) {
+    set({ selectedTiles: [`${col},${row}`] })
+  },
+
+  toggleTileSelection(col, row) {
+    const id = `${col},${row}`
+    set(s => ({
+      selectedTiles: s.selectedTiles.includes(id)
+        ? s.selectedTiles.filter(t => t !== id)
+        : [...s.selectedTiles, id],
+    }))
+  },
+
+  clearSelection() {
+    set({ selectedTiles: [] })
   },
 
   // ── Bag ──

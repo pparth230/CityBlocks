@@ -17,6 +17,15 @@
  *   Conditions: True, False, crop_ready(), tile_empty(), has_wheat(N)
  */
 
+// ─── Machine compatibility ────────────────────────────────────────────────────
+
+export const MACHINE_COMPAT = {
+  base_drone: ['plant', 'harvest', 'move', 'move_right', 'move_left', 'move_up', 'move_down', 'bag', 'wait'],
+  mower:      ['harvest', 'move', 'move_right', 'move_left', 'move_up', 'move_down', 'wait'],
+  planter:    ['plant', 'move', 'move_right', 'move_left', 'move_up', 'move_down', 'wait'],
+  harvester:  ['harvest', 'move', 'move_right', 'move_left', 'move_up', 'move_down', 'wait'],
+}
+
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
 function parseProgram(source) {
@@ -96,9 +105,9 @@ function parseBlock(lines, startIdx, minIndent) {
         if (elseBodyIndent !== undefined && elseBodyIndent > line.indent) {
           const eb = parseBlock(lines, afterIf + 1, elseBodyIndent)
           elseBody = eb.stmts
-          consumed += 1 + eb.consumed   // skip 'else:' line + body
+          consumed += 1 + eb.consumed
         } else {
-          consumed += 1  // skip 'else:' with empty body
+          consumed += 1
         }
       }
 
@@ -167,7 +176,7 @@ function evalCond(expr, getState) {
 
 // ─── Interpreter ─────────────────────────────────────────────────────────────
 
-export async function* interpret(source, getState, userRoutines = {}) {
+export async function* interpret(source, getState, userRoutines = {}, machineType = 'base_drone') {
   let stmts
   try {
     stmts = parseProgram(source)
@@ -175,47 +184,57 @@ export async function* interpret(source, getState, userRoutines = {}) {
     yield { type: 'log', msg: `ParseError: ${e.message}`, logType: 'error' }
     return
   }
-  yield* runStmts(stmts, getState, userRoutines)
+  yield* runStmts(stmts, getState, userRoutines, machineType)
   yield { type: 'done' }
 }
 
-async function* runStmts(stmts, getState, userRoutines) {
-  for (const stmt of stmts) yield* runStmt(stmt, getState, userRoutines)
+async function* runStmts(stmts, getState, userRoutines, machineType) {
+  for (const stmt of stmts) yield* runStmt(stmt, getState, userRoutines, machineType)
 }
 
-async function* runStmt(stmt, getState, userRoutines) {
+async function* runStmt(stmt, getState, userRoutines, machineType) {
   if (stmt.type === 'error') {
     yield { type: 'log', msg: stmt.msg, logType: 'error' }
     return
   }
   if (stmt.type === 'for') {
     for (let i = 0; i < stmt.count; i++) {
-      yield* runStmts(stmt.body, getState, userRoutines)
+      yield* runStmts(stmt.body, getState, userRoutines, machineType)
     }
     return
   }
   if (stmt.type === 'while') {
     while (evalCond(stmt.cond, getState)) {
       yield { type: 'tick' }
-      yield* runStmts(stmt.body, getState, userRoutines)
+      yield* runStmts(stmt.body, getState, userRoutines, machineType)
     }
     return
   }
   if (stmt.type === 'if') {
     if (evalCond(stmt.cond, getState)) {
-      yield* runStmts(stmt.ifBody, getState, userRoutines)
+      yield* runStmts(stmt.ifBody, getState, userRoutines, machineType)
     } else if (stmt.elseBody.length > 0) {
-      yield* runStmts(stmt.elseBody, getState, userRoutines)
+      yield* runStmts(stmt.elseBody, getState, userRoutines, machineType)
     }
     return
   }
   if (stmt.type === 'call') {
-    yield* runCall(stmt, getState, userRoutines)
+    yield* runCall(stmt, getState, userRoutines, machineType)
   }
 }
 
-async function* runCall(stmt, getState, userRoutines = {}) {
+async function* runCall(stmt, getState, userRoutines = {}, machineType = 'base_drone') {
   const { name, args } = stmt
+
+  // Compatibility check for built-in commands
+  const builtins = ['plant', 'harvest', 'move', 'move_right', 'move_left', 'move_up', 'move_down', 'bag', 'wait']
+  if (builtins.includes(name)) {
+    const compat = MACHINE_COMPAT[machineType] ?? MACHINE_COMPAT.base_drone
+    if (!compat.includes(name)) {
+      yield { type: 'log', msg: `${machineType} cannot run '${name}()'`, logType: 'error' }
+      return
+    }
+  }
 
   switch (name) {
     case 'plant': {
@@ -240,7 +259,6 @@ async function* runCall(stmt, getState, userRoutines = {}) {
 
     case 'move': {
       const arg = args[0]
-      // move("left"), move("right"), move("up"), move("down")
       if (typeof arg === 'string' && ['left','right','up','down'].includes(arg)) {
         if (!getState().canMove(arg)) {
           yield { type: 'log', msg: `move("${arg}"): no tile in that direction`, logType: 'error' }
@@ -280,12 +298,11 @@ async function* runCall(stmt, getState, userRoutines = {}) {
     }
 
     default:
-      // Check user-defined routines
       if (userRoutines[name]) {
         let stmts
         try { stmts = parseProgram(userRoutines[name]) }
         catch (e) { yield { type: 'log', msg: `ParseError in '${name}': ${e.message}`, logType: 'error' }; return }
-        yield* runStmts(stmts, getState, userRoutines)
+        yield* runStmts(stmts, getState, userRoutines, machineType)
       } else {
         yield { type: 'log', msg: `NameError: '${name}' is not defined`, logType: 'error' }
       }
