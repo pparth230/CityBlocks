@@ -2,9 +2,156 @@ import React, { useRef, Suspense } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import { useGameStore, CROP_STAGES } from '../game/store'
+import { useGameStore, CROP_STAGES, TILE_COST } from '../game/store'
 
 const TILE_SPACING = 2.5
+
+// ─── Expansion arrows ─────────────────────────────────────────────────────────
+
+const DIR_DELTA_3D = {
+  up:    { dcol: 0,  drow: -1 },
+  down:  { dcol: 0,  drow:  1 },
+  left:  { dcol: -1, drow:  0 },
+  right: { dcol: 1,  drow:  0 },
+}
+
+function getExpansionArrows(selectedTiles, allTiles) {
+  if (!selectedTiles.length) return []
+  const selected = selectedTiles.map(id => {
+    const [col, row] = id.split(',').map(Number)
+    return { col, row }
+  })
+  const minCol = Math.min(...selected.map(t => t.col))
+  const maxCol = Math.max(...selected.map(t => t.col))
+  const minRow = Math.min(...selected.map(t => t.row))
+  const maxRow = Math.max(...selected.map(t => t.row))
+  const midCol = Math.round((minCol + maxCol) / 2)
+  const midRow = Math.round((minRow + maxRow) / 2)
+
+  // One arrow per direction — anchored to the nearest real tile at the bounding-box edge
+  const candidates = [
+    { dir: 'up',    srcCol: midCol, srcRow: minRow },
+    { dir: 'down',  srcCol: midCol, srcRow: maxRow },
+    { dir: 'left',  srcCol: minCol, srcRow: midRow },
+    { dir: 'right', srcCol: maxCol, srcRow: midRow },
+  ]
+
+  return candidates.filter(c => {
+    if (!allTiles.find(t => t.col === c.srcCol && t.row === c.srcRow)) return false
+    const { dcol, drow } = DIR_DELTA_3D[c.dir]
+    return !allTiles.find(t => t.col === c.srcCol + dcol && t.row === c.srcRow + drow)
+  }).map(c => {
+    const { dcol, drow } = DIR_DELTA_3D[c.dir]
+    // All selected tiles that can expand in this direction (no neighbor that way)
+    const sources = selected.filter(s =>
+      !allTiles.find(t => t.col === s.col + dcol && t.row === s.row + drow)
+    )
+    return {
+      ...c,
+      x: (c.srcCol + dcol) * TILE_SPACING,
+      z: (c.srcRow + drow) * TILE_SPACING,
+      sources, // [{col, row}] — all tiles that expand together
+      multi: sources.length > 1,
+    }
+  })
+}
+
+function ExpansionArrow({ x, z, srcCol, srcRow, dir, canAfford, multi, sources }) {
+  const shaftRef = useRef()
+  const t = useRef(Math.random() * Math.PI * 2) // stagger phases
+
+  useFrame((_, delta) => {
+    t.current += delta * 2.5
+    if (shaftRef.current) {
+      shaftRef.current.position.y = 0.55 + Math.sin(t.current) * 0.1
+    }
+  })
+
+  // green = single tile can expand, red = multiple tiles share this direction
+  const arrowColor = multi ? '#f87171' : '#4ade80'
+  const color    = canAfford ? arrowColor : '#94a3b8'
+  const emissive = canAfford ? (multi ? '#991b1b' : '#16a34a') : '#475569'
+  const emInt    = canAfford ? 0.55 : 0.1
+
+  function handleClick(e) {
+    e.stopPropagation()
+    if (!canAfford) return
+    // Buy all tiles that expand together in this direction
+    sources.forEach(s => useGameStore.getState().buyTile(s.col, s.row, dir))
+  }
+
+  function setCursor(on) {
+    document.body.style.cursor = on && canAfford ? 'pointer' : 'default'
+  }
+
+  return (
+    <group position={[x, 0, z]} onClick={handleClick}
+      onPointerEnter={() => setCursor(true)}
+      onPointerLeave={() => setCursor(false)}
+    >
+      {/* Glowing base pad — same footprint as a tile */}
+      <mesh position={[0, 0.04, 0]}>
+        <boxGeometry args={[2.35, 0.07, 2.35]} />
+        <meshStandardMaterial
+          color={color} emissive={emissive} emissiveIntensity={emInt}
+          transparent opacity={0.55} roughness={0.4}
+        />
+      </mesh>
+      {/* Dashed border ring */}
+      <mesh position={[0, 0.09, 0]}>
+        <boxGeometry args={[2.42, 0.03, 2.42]} />
+        <meshStandardMaterial
+          color={color} emissive={emissive} emissiveIntensity={emInt + 0.2}
+          transparent opacity={0.7} wireframe
+        />
+      </mesh>
+
+      {/* Floating arrow (shaft + head) */}
+      <group ref={shaftRef} position={[0, 0.55, 0]}>
+        {/* Shaft */}
+        <mesh position={[0, 0, 0]}>
+          <boxGeometry args={[0.13, 0.45, 0.13]} />
+          <meshStandardMaterial color={color} emissive={emissive} emissiveIntensity={emInt + 0.1} roughness={0.3} />
+        </mesh>
+        {/* Arrowhead cone */}
+        <mesh position={[0, 0.38, 0]}>
+          <coneGeometry args={[0.24, 0.38, 6]} />
+          <meshStandardMaterial color={color} emissive={emissive} emissiveIntensity={emInt + 0.3} roughness={0.2} />
+        </mesh>
+      </group>
+    </group>
+  )
+}
+
+function AllExpansionArrows() {
+  const selectedTiles = useGameStore(s => s.selectedTiles)
+  const tiles         = useGameStore(s => s.tiles)
+  const wheat         = useGameStore(s => s.bag.wheat)
+  if (!selectedTiles.length) return null
+  const arrows = getExpansionArrows(selectedTiles, tiles)
+  return (
+    <>
+      {arrows.flatMap(a => {
+        const { dcol, drow } = DIR_DELTA_3D[a.dir]
+        const canAfford = wheat >= TILE_COST * a.sources.length
+        // One indicator per source tile — shows exactly which tiles will be added
+        return a.sources.map(s => (
+          <ExpansionArrow
+            key={`${a.dir}-${s.col}-${s.row}`}
+            x={(s.col + dcol) * TILE_SPACING}
+            z={(s.row + drow) * TILE_SPACING}
+            srcCol={s.col}
+            srcRow={s.row}
+            dir={a.dir}
+            canAfford={canAfford}
+            multi={a.multi}
+            sources={a.sources}
+          />
+        ))
+      })}
+    </>
+  )
+}
 
 // ─── Crop visual ──────────────────────────────────────────────────────────────
 const STAGE_COLORS = {
@@ -313,6 +460,7 @@ export default function GameScene() {
         <Suspense fallback={null}>
           <AllTiles />
           <AllMachines />
+          <AllExpansionArrows />
         </Suspense>
 
         <OrbitControls

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import GameScene from './scene/GameScene'
 import RoutineCard, { CARD_COLORS } from './ui/RoutineCard'
-import { useGameStore, CROP_STAGES, TILE_COST } from './game/store'
+import { useGameStore, CROP_STAGES } from './game/store'
 import { interpret, MACHINE_COMPAT } from './game/lang/interpreter'
 import { blocksToCode } from './game/lang/blocksToCode'
 
@@ -15,7 +15,6 @@ const DIR_DELTA = {
   down:  { col: 0, row: 1 },
 }
 
-const DIR_ARROWS = { up: '↑', down: '↓', left: '←', right: '→' }
 
 const MACHINE_TYPES = [
   { type: 'base_drone', label: 'Drone',     color: '#3b82f6' },
@@ -116,6 +115,11 @@ export default function App() {
         }
         case 'move_dir': {
           useGameStore.getState().moveMachineDir(machineId, step.dir)
+          await sleep(STEP_MS)
+          break
+        }
+        case 'move_to': {
+          useGameStore.getState().moveMachineTo(machineId, step.col, step.row)
           await sleep(STEP_MS)
           break
         }
@@ -281,23 +285,6 @@ function RightSidebar({ bag, routines }) {
   const { selectedTiles, tiles, machines } = useGameStore()
   const store = useGameStore()
 
-  const canAfford = bag.wheat >= TILE_COST
-
-  // Expandable edges for selected tiles
-  const expandable = []
-  const seen = new Set()
-  selectedTiles.forEach(id => {
-    const [c, r] = id.split(',').map(Number)
-    for (const [dir, d] of Object.entries(DIR_DELTA)) {
-      const nc = c + d.col, nr = r + d.row
-      const key = `${c},${r},${dir}`
-      if (!seen.has(key) && !tiles.find(t => t.col === nc && t.row === nr)) {
-        seen.add(key)
-        expandable.push({ col: c, row: r, dir })
-      }
-    }
-  })
-
   const firstId = selectedTiles[0]
   const selCoords = firstId ? firstId.split(',').map(Number) : null
   const selTile = selCoords ? tiles.find(t => t.id === firstId) : null
@@ -396,32 +383,6 @@ function RightSidebar({ bag, routines }) {
               )}
             </div>
           </div>
-
-          {/* Expand farm */}
-          {expandable.length > 0 && (
-            <div style={{ ...panel, alignItems: 'center' }}>
-              <div style={labelStyle}>EXPAND  ·  {TILE_COST} wheat</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
-                {expandable.map(({ col: c, row: r, dir }) => (
-                  <button
-                    key={`${c},${r},${dir}`}
-                    onClick={() => canAfford && store.buyTile(c, r, dir)}
-                    title={canAfford ? `Add tile ${dir} of (${c},${r})` : `Need ${TILE_COST} wheat`}
-                    style={{
-                      width: 32, height: 32,
-                      background: canAfford ? '#f0fdf4' : '#f8fafc',
-                      border: `1px solid ${canAfford ? '#86efac' : '#e2e8f0'}`,
-                      borderRadius: 7, color: canAfford ? '#15803d' : '#cbd5e1',
-                      fontSize: 16, fontWeight: 700, cursor: canAfford ? 'pointer' : 'default',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                    }}
-                  >
-                    {DIR_ARROWS[dir]}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {selectedTiles.length === 1
             ? <div style={{ fontSize: 9, color: '#94a3b8', textAlign: 'center' }}>shift+click to select more tiles</div>

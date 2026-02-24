@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
 import Block from './Block'
 
 let _id = 1
@@ -28,6 +28,9 @@ function makeBlock(type, extraArgs = {}) {
 }
 
 export default function BlockCanvas({ blocks, onChange, customDefs = [], nested = false }) {
+  const dragSrc = useRef(null)
+  const [dragOver, setDragOver] = useState(null) // index being hovered
+
   function updateBlock(id, updated) {
     onChange(blocks.map(b => b.id === id ? updated : b))
   }
@@ -38,6 +41,36 @@ export default function BlockCanvas({ blocks, onChange, customDefs = [], nested 
 
   function addBlock(type, extraArgs) {
     onChange([...blocks, makeBlock(type, extraArgs)])
+  }
+
+  function handleDragStart(e, idx) {
+    dragSrc.current = idx
+    e.dataTransfer.effectAllowed = 'move'
+    // Tiny delay so the drag image renders before ghost appears
+    e.currentTarget.style.opacity = '0.4'
+  }
+
+  function handleDragEnd(e) {
+    e.currentTarget.style.opacity = '1'
+    setDragOver(null)
+    dragSrc.current = null
+  }
+
+  function handleDragOver(e, idx) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (idx !== dragSrc.current) setDragOver(idx)
+  }
+
+  function handleDrop(e, dropIdx) {
+    e.preventDefault()
+    const srcIdx = dragSrc.current
+    if (srcIdx === null || srcIdx === dropIdx) return
+    const next = [...blocks]
+    const [moved] = next.splice(srcIdx, 1)
+    next.splice(dropIdx, 0, moved)
+    onChange(next)
+    setDragOver(null)
   }
 
   const addBtnStyle = {
@@ -65,14 +98,27 @@ export default function BlockCanvas({ blocks, onChange, customDefs = [], nested 
             add blocks below ↓
           </div>
         )}
-        {blocks.map(b => (
-          <Block
+        {blocks.map((b, idx) => (
+          <div
             key={b.id}
-            block={b}
-            onChange={updated => updateBlock(b.id, updated)}
-            onDelete={() => deleteBlock(b.id)}
-            customDefs={customDefs}
-          />
+            draggable
+            onDragStart={e => handleDragStart(e, idx)}
+            onDragEnd={handleDragEnd}
+            onDragOver={e => handleDragOver(e, idx)}
+            onDrop={e => handleDrop(e, idx)}
+            style={{
+              borderTop: dragOver === idx ? '2px solid #6366f1' : '2px solid transparent',
+              borderRadius: 2,
+              cursor: 'grab',
+            }}
+          >
+            <Block
+              block={b}
+              onChange={updated => updateBlock(b.id, updated)}
+              onDelete={() => deleteBlock(b.id)}
+              customDefs={customDefs}
+            />
+          </div>
         ))}
       </div>
 

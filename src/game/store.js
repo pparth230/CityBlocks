@@ -111,6 +111,15 @@ export const useGameStore = create((set, get) => ({
     }))
   },
 
+  moveMachineTo(id, col, row) {
+    const { tiles } = get()
+    if (!tiles.find(t => t.col === col && t.row === row)) return false
+    set(s => ({
+      machines: s.machines.map(m => m.id === id ? { ...m, col, row } : m),
+    }))
+    return true
+  },
+
   moveMachineDir(id, dir) {
     const { machines, tiles } = get()
     const machine = machines.find(m => m.id === id)

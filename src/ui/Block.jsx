@@ -108,21 +108,13 @@ export default function Block({ block, onChange, onDelete, customDefs }) {
         )}
 
         {block.type === 'while' && (
-          <select
+          <input
             value={block.args.cond ?? 'True'}
             onChange={e => patchArgs({ cond: e.target.value })}
-            style={selectStyle}
-          >
-            <option value="True">forever</option>
-            <option value="crop_ready()">crop ready</option>
-            <option value="tile_empty()">tile empty</option>
-            <option value="not_ready()">not ready</option>
-            <option value="has_wheat(1)">has wheat</option>
-            <option value="can_move_right()">can move right</option>
-            <option value="can_move_left()">can move left</option>
-            <option value="can_move_up()">can move up</option>
-            <option value="can_move_down()">can move down</option>
-          </select>
+            style={{ ...inputStyle, width: 110, fontStyle: block.args.cond === 'True' ? 'italic' : 'normal' }}
+            placeholder="True"
+            spellCheck={false}
+          />
         )}
 
         <button

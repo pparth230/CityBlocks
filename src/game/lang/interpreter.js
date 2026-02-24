@@ -143,6 +143,20 @@ function parseArgs(raw) {
   })
 }
 
+// ─── Wrap-around helper ───────────────────────────────────────────────────────
+
+function findWrapTarget(tiles, col, row, dir) {
+  // When there's no tile in `dir`, return the farthest tile in the opposite
+  // direction along the same axis (same col for up/down, same row for left/right)
+  switch (dir) {
+    case 'up':    { const c = tiles.filter(t => t.col === col); return c.length ? c.reduce((a, b) => a.row > b.row ? a : b) : null }
+    case 'down':  { const c = tiles.filter(t => t.col === col); return c.length ? c.reduce((a, b) => a.row < b.row ? a : b) : null }
+    case 'left':  { const c = tiles.filter(t => t.row === row); return c.length ? c.reduce((a, b) => a.col > b.col ? a : b) : null }
+    case 'right': { const c = tiles.filter(t => t.row === row); return c.length ? c.reduce((a, b) => a.col < b.col ? a : b) : null }
+    default: return null
+  }
+}
+
 // ─── Condition evaluator ─────────────────────────────────────────────────────
 
 function evalCond(expr, getState) {
@@ -261,10 +275,16 @@ async function* runCall(stmt, getState, userRoutines = {}, machineType = 'base_d
       const arg = args[0]
       if (typeof arg === 'string' && ['left','right','up','down'].includes(arg)) {
         if (!getState().canMove(arg)) {
-          yield { type: 'log', msg: `move("${arg}"): no tile in that direction`, logType: 'error' }
-          return
+          const { drone, tiles } = getState()
+          const wrap = findWrapTarget(tiles, drone.col, drone.row, arg)
+          if (wrap) {
+            yield { type: 'move_to', col: wrap.col, row: wrap.row }
+          } else {
+            yield { type: 'log', msg: `move("${arg}"): no tiles on this axis`, logType: 'error' }
+          }
+        } else {
+          yield { type: 'move_dir', dir: arg }
         }
-        yield { type: 'move_dir', dir: arg }
       } else {
         yield { type: 'log', msg: `move(): use move("left"), move("right"), move("up"), or move("down")`, logType: 'error' }
       }
@@ -277,10 +297,16 @@ async function* runCall(stmt, getState, userRoutines = {}, machineType = 'base_d
     case 'move_down': {
       const dir = name.replace('move_', '')
       if (!getState().canMove(dir)) {
-        yield { type: 'log', msg: `${name}(): no tile in that direction`, logType: 'error' }
-        return
+        const { drone, tiles } = getState()
+        const wrap = findWrapTarget(tiles, drone.col, drone.row, dir)
+        if (wrap) {
+          yield { type: 'move_to', col: wrap.col, row: wrap.row }
+        } else {
+          yield { type: 'log', msg: `${name}(): no tiles on this axis`, logType: 'error' }
+        }
+      } else {
+        yield { type: 'move_dir', dir }
       }
-      yield { type: 'move_dir', dir }
       break
     }
 
