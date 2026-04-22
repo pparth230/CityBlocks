@@ -1,10 +1,11 @@
 {
-  "name": "farmbot",
+  "name": "tonerimages",
   "version": "0.1.0",
-  "description": "Visual node-based farming sim",
+  "description": "Toner system for text and image processing",
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
+    "web": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "electron": "electron ."

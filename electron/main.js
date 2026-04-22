@@ -15,7 +15,7 @@ function createWindow() {
       contextIsolation: true,
     },
     titleBarStyle: 'hiddenInset',
-    title: 'FarmBot',
+    title: 'TonerImages',
   })
 
   if (isDev) {
@@ -29,7 +29,7 @@ function createWindow() {
 app.whenReady().then(() => {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
-      label: 'FarmBot',
+      label: 'TonerImages',
       submenu: [
         { role: 'hide' },
         { role: 'hideOthers' },

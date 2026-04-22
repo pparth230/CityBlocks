@@ -1,5 +1,5 @@
 /**
- * Hand-rolled interpreter for the FarmBot DSL.
+ * Hand-rolled interpreter for the internal DSL.
  *
  * Supported syntax:
  *   plant("wheat")
